@@ -1,0 +1,31 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": ["s3:GetObject","s3:PutObject"],
+      "Resource": [
+        "arn:aws:s3:::amzn-s3-demo-source-bucket/*",
+        "arn:aws:s3:::amzn-s3-demo-logging-bucket/*"
+      ]
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ram:GetResourceShareInvitations",
+        "ram:AcceptResourceShareInvitation",
+        "glue:CreateDatabase",
+        "glue:DeleteDatabase"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "bedrock-agentcore:*",
+        "agent-credential-provider:*"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
