@@ -1,0 +1,47 @@
+param(
+  [Parameter(Mandatory=$true)] [string] $BucketName,
+  [string] $Region = "us-east-1",
+  [string] $Profile
+)
+
+$ErrorActionPreference = "Stop"
+function awsx { param([Parameter(ValueFromRemainingArguments=$true)][string[]]$Args)
+  if ($Profile) { aws @Args --profile $Profile } else { aws @Args } }
+
+Write-Host "==> Creating S3 bucket (ignore error if it already exists)"
+try { awsx s3api create-bucket --bucket $BucketName --region $Region } catch { }
+
+Write-Host "==> Uploading Lambda artifact"
+awsx s3 cp ".\cloudformation\fhir-openapi-searchpatient.zip" "s3://$BucketName/lambda_code/fhir-openapi-searchpatient.zip"
+
+Write-Host "==> Deploying CloudFormation (10 min typical)"
+awsx cloudformation create-stack `
+  --stack-name healthcare-cfn-stack `
+  --template-body file://cloudformation/healthcare-cfn.yaml `
+  --capabilities CAPABILITY_NAMED_IAM `
+  --region $Region `
+  --parameters ParameterKey=LambdaS3Bucket,ParameterValue="$BucketName" `
+               ParameterKey=LambdaS3Key,ParameterValue="lambda_code/fhir-openapi-searchpatient.zip" | Out-Null
+awsx cloudformation wait stack-create-complete --stack-name healthcare-cfn-stack --region $Region
+
+Write-Host "==> Initialize .env and pull outputs"
+$cmd = @("python","init_env.py","--cfn_name","healthcare-cfn-stack","--openapi_spec_file",".\fhir-openapi-spec.yaml","--region",$Region)
+if ($Profile) { $cmd += @("--profile",$Profile) }
+& $cmd
+
+$api = awsx cloudformation describe-stacks --stack-name healthcare-cfn-stack --query "Stacks[0].Outputs[?OutputKey=='APIEndpoint'].OutputValue" --output text --region $Region
+$fn  = awsx cloudformation describe-stacks --stack-name healthcare-cfn-stack --query "Stacks[0].Outputs[?OutputKey=='APIGWCognitoLambdaName'].OutputValue" --output text --region $Region
+Write-Host "API Endpoint: $api"
+Write-Host "Cognito Toggle Lambda: $fn"
+
+Write-Host "==> Enable Cognito authorizer on API Gateway"
+'{"RequestType":"Create"}' | Set-Content -Encoding ascii -NoNewline payload.json
+awsx lambda invoke --function-name $fn response.json --payload fileb://payload.json --cli-binary-format raw-in-base64-out --region $Region | Out-Null
+
+Write-Host "==> Seed HealthLake test data (~5 min)"
+python .\create_test_data.py
+
+Write-Host "==> Create AgentCore Gateway/Target"
+$gwLine = python .\setup_fhir_mcp.py --op_type Create --gateway_name "healthcare-fhir-gateway-$(Get-Random)"
+$gw = ($gwLine | Select-String -Pattern 'Gateway created with id:\s*(\S+)' ).Matches.Groups[1].Value
+Write-Host "Gateway ID: $gw"
