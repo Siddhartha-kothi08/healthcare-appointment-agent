@@ -3,7 +3,7 @@
 Conversational agent that checks a child’s immunization schedule and books vaccine appointments.
 It uses **Amazon Bedrock Agent Runtime** + **AgentCore Gateway/Target** to call a **FHIR API** hosted behind **API Gateway + Lambda** that queries **AWS HealthLake**.
 
-## Architecture (10,000-ft)
+## Architecture
 - **Agent Runtime** (Bedrock) decides actions/tools from user prompts.
 - **AgentCore Gateway** authenticates and forwards tool calls to…
 - **Gateway Target → API Gateway → Lambda → HealthLake**.
